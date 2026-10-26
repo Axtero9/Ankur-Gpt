@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-sidebar: #171717;
+    --bg-main: #212121;
+    --bg-surface: #2f2f2f;
+    --bg-surface-hover: #383838;
+    --border-subtle: #2f2f2f;
+    --border-medium: #424242;
+    --text-primary: #ececec;
+    --text-secondary: #b4b4b4;
+    --text-muted: #8e8e8e;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Minimal Scrollbar like ChatGPT */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #383838;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+}
+
+/* ChatGPT Prose Styling */
+.chatgpt-prose {
+  line-height: 1.75;
+  color: #ececec;
+  font-size: 1rem;
+}
+
+.chatgpt-prose h1, .chatgpt-prose h2, .chatgpt-prose h3 {
+  color: #ffffff;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.chatgpt-prose h1 { font-size: 1.5rem; }
+.chatgpt-prose h2 { font-size: 1.25rem; }
+.chatgpt-prose h3 { font-size: 1.1rem; }
+
+.chatgpt-prose p {
+  margin-bottom: 1rem;
+}
+
+.chatgpt-prose ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.chatgpt-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.chatgpt-prose li {
+  margin-bottom: 0.35rem;
+}
+
+.chatgpt-prose strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.chatgpt-prose code:not(pre code) {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.875rem;
+  background: #2a2a2a;
+  color: #ececec;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+}
+
+.chatgpt-prose blockquote {
+  border-left: 3px solid #4f4f4f;
+  padding-left: 1rem;
+  color: #b4b4b4;
+  margin: 1rem 0;
+}
