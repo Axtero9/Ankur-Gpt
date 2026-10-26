@@ -1,5 +1,5 @@
 import { Message, AppSettings } from '../types';
-import { SCHOOL_CONTEXT_DOC } from './storage';
+import { SCHOOL_CONTEXT_DOC, DEFAULT_GEMINI_KEY } from './storage';
 
 interface GenerateOptions {
   messages: Message[];
@@ -16,14 +16,14 @@ export async function generateAIResponse({
 }: GenerateOptions): Promise<string> {
   const lastMessage = messages[messages.length - 1];
   const query = lastMessage ? lastMessage.content.trim() : '';
+  const effectiveKey = settings.apiKey || DEFAULT_GEMINI_KEY;
 
-  // Priority 1: Google Gemini API (Preconfigured with user's key)
-  if (settings.apiProvider === 'gemini' && settings.apiKey) {
+  // Priority 1: Google Gemini API (High-speed multi-model failover)
+  if (effectiveKey) {
     try {
-      return await callGeminiAPI(messages, settings, onChunk, signal);
+      return await callGeminiAPIWithFailover(messages, settings, effectiveKey, onChunk, signal);
     } catch (err: unknown) {
-      console.warn('Gemini API call encountered an issue, transitioning to local knowledge base:', err);
-      // Fallback gracefully to autonomous school knowledge engine
+      console.warn('Gemini API call encountered an issue, transitioning to intelligent local engine:', err);
     }
   }
 
@@ -32,87 +32,108 @@ export async function generateAIResponse({
     try {
       return await streamOpenAIResponse(messages, settings, onChunk, signal);
     } catch (err: unknown) {
-      console.warn('OpenAI API call failed, falling back to school local engine:', err);
+      console.warn('OpenAI API call failed, falling back to local engine:', err);
     }
   }
 
-  // Priority 3: Autonomous School Knowledge Engine
+  // Priority 3: Conversational Autonomous Engine
   return await streamAutonomousSchoolResponse(query, messages, settings, onChunk, signal);
 }
 
-// Google Gemini API Engine
-async function callGeminiAPI(
+// Gemini API with automatic model failover (tries Lite, 3.5, 3.1 so 503 spikes never break the UX)
+async function callGeminiAPIWithFailover(
   messages: Message[],
   settings: AppSettings,
+  apiKey: string,
   onChunk: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<string> {
-  let modelName = settings.selectedModel || 'gemini-flash-latest';
-  if (modelName === 'school-local-engine') {
-    modelName = 'gemini-flash-latest';
-  }
+  // Order of candidate models to try
+  const candidateModels = [
+    settings.selectedModel || 'gemini-flash-lite-latest',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-latest'
+  ];
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${settings.apiKey}`;
+  // Remove duplicates while preserving order
+  const uniqueModels = Array.from(new Set(candidateModels));
 
-  // Build conversation history for Gemini API
-  // In Gemini v1beta, contents parts array has role 'user' | 'model'
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
+  let lastError: Error | null = null;
 
-  const fullSystemInstruction = `${settings.systemPrompt}\n\nComprehensive School Knowledge Base:\n${SCHOOL_CONTEXT_DOC}`;
+  for (const model of uniqueModels) {
+    if (signal?.aborted) throw new Error('Aborted');
 
-  const requestBody = {
-    contents,
-    systemInstruction: {
-      parts: [{ text: fullSystemInstruction }]
-    },
-    generationConfig: {
-      temperature: settings.temperature ?? 0.7,
-      maxOutputTokens: 2048
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const contents = messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
+
+      const fullSystemInstruction = `${settings.systemPrompt}\n\nSchool Ground Truth Knowledge:\n${SCHOOL_CONTEXT_DOC}`;
+
+      const requestBody = {
+        contents,
+        systemInstruction: {
+          parts: [{ text: fullSystemInstruction }]
+        },
+        generationConfig: {
+          temperature: settings.temperature ?? 0.7,
+          maxOutputTokens: 2048
+        }
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.warn(`Model ${model} returned HTTP ${res.status}:`, errorText);
+        lastError = new Error(`HTTP ${res.status}`);
+        continue; // try next candidate model
+      }
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawText) {
+        lastError = new Error('Empty response');
+        continue;
+      }
+
+      // Stream text smoothly with typewriter effect matching user's streamSpeed
+      const delay = settings.streamSpeed === 'fast' ? 5 : settings.streamSpeed === 'instant' ? 0 : 12;
+      const tokens = rawText.split(/(?<=\s|[\n.,;:?!])/);
+
+      let accumulated = '';
+      for (const part of tokens) {
+        if (signal?.aborted) break;
+        accumulated += part;
+        onChunk(accumulated);
+        if (delay > 0) {
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+
+      return accumulated;
+    } catch (e: any) {
+      if (signal?.aborted) throw e;
+      lastError = e;
     }
-  };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody),
-    signal
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Gemini HTTP ${res.status}: ${errorText}`);
   }
 
-  const data = await res.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!rawText) {
-    throw new Error('Gemini API returned an empty response candidate.');
-  }
-
-  // Stream text smoothly with typewriter effect matching user's streamSpeed
-  const delay = settings.streamSpeed === 'fast' ? 6 : settings.streamSpeed === 'instant' ? 0 : 12;
-  const tokens = rawText.split(/(?<=\s|[\n.,;:?!])/);
-
-  let accumulated = '';
-  for (const part of tokens) {
-    if (signal?.aborted) break;
-    accumulated += part;
-    onChunk(accumulated);
-    if (delay > 0) {
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
-
-  return accumulated;
+  throw lastError || new Error('All Gemini models unavailable');
 }
 
-// Autonomous School Knowledge Engine (Deterministic, instant, 100% verified against school facts)
+// Conversational Autonomous Engine (Natural, responsive, human-like answers when offline)
 async function streamAutonomousSchoolResponse(
   query: string,
   history: Message[],
@@ -123,158 +144,172 @@ async function streamAutonomousSchoolResponse(
   const q = query.toLowerCase();
   let fullResponse = '';
 
-  if (q.includes('admission') || q.includes('dakhila') || q.includes('class 6') || q.includes('class 9') || q.includes('class 11') || q.includes('form') || q.includes('entrance') || q.includes('edudel')) {
-    fullResponse = `### CM Shri School Karampura // Admission Guide 2026-27
+  // Location / Where is the school?
+  if (
+    q.includes('kaha') ||
+    q.includes('kahan') ||
+    q.includes('where') ||
+    q.includes('address') ||
+    q.includes('location') ||
+    q.includes('rasta') ||
+    q.includes('metro') ||
+    q.includes('route')
+  ) {
+    fullResponse = `Humara school **Industrial Area, Karampura, New Delhi – 110015** (Zone 16, District West-A) mein sthit hai.
 
-Admissions to **CM Shri School Karampura (School ID: 1516068)** are governed centrally by the **Directorate of Education (DoE), Government of NCT of Delhi** under the prestigious **Centre of Excellence** initiative.
+Aap Google Maps par direct directions ke liye is link par click kar sakte hain:
+📍 [Google Maps Directions](https://www.google.com/maps/place/Government+Co+Ed+Sr+Secondary+School+Industrial+Area+Karam+Pura/@28.6632984,77.1416647,17z)
 
-#### 1. Available Admission Grades
-* **Class 6:** Vacant seats (~35 general seats).
-* **Class 9:** Through Common Aptitude Entrance Test (based on vacancies).
-* **Class 11:** Through Entrance Test & Stream Allocation (Science, Commerce, Humanities).
+School all-weather pucca road se easily accessible hai aur Delhi Metro network se well-connected hai. Kya aapko school tak pahunchne ka nearest metro station ya timings janna hai?`;
 
-#### 2. Step-by-Step Application Process
-1. **Online Portal:** Visit the Directorate of Education website at [edudel.nic.in](https://www.edudel.nic.in).
-2. **Registration:** Click on **"CM Shri Admission 2026-27"** and select **School ID: \`1516068\`**.
-3. **Fill Details:** Enter student particulars, previous class marks, Aadhaar number, and Delhi residential address.
-4. **Common Aptitude Test:** Appear for the entrance test covering *Hindi, English, Mathematics, Science, and Mental Ability*.
-5. **Merit List & Verification:** Shortlisted candidates are invited to the school campus for physical document verification.
-6. **Free Admission Confirmation:** Once verified, admission is confirmed with **zero fees**.
+  // Fees / Cost / Free?
+  } else if (
+    q.includes('fee') ||
+    q.includes('fees') ||
+    q.includes('cost') ||
+    q.includes('paisa') ||
+    q.includes('paise') ||
+    q.includes('kharcha') ||
+    q.includes('charge') ||
+    q.includes('free')
+  ) {
+    fullResponse = `CM Shri School Karampura mein education **100% FREE** hai!
 
-#### 3. Mandatory Verification Documents
-- Original Birth Certificate
-- Report Card / Marksheet of the previously passed class
-- Transfer Certificate (TC) from a recognized school
-- Proof of Delhi Residence (Aadhaar Card, Voter ID, Ration Card, or Electricity Bill)
-- Caste Certificate (SC/ST/OBC/EWS) if applicable
-- 4 Recent passport-sized color photographs
+Delhi Government ke **CM Shri Centre of Excellence** initiative ke antargat:
+- **Admission Fee:** ₹0 (NIL)
+- **Monthly Tuition Fee:** ₹0 (NIL)
+- **Exam & Lab Charges:** ₹0 (NIL)
+- **Books & Uniform:** Provided / Subsidized under Delhi Govt schemes
+- **Mid-Day Meal:** Free nutritious daily meals
 
-> **100% Free Education Policy:** As a Delhi Government Centre of Excellence, all education, textbooks, and midday meals are provided entirely free of cost.`;
+Kisi bhi prakaar ka koi hidden charge nahi hai. Kya aapko admission process ya eligibility ke baare mein janna hai?`;
 
-  } else if (q.includes('fee') || q.includes('fees') || q.includes('cost') || q.includes('paisa') || q.includes('charge')) {
-    fullResponse = `### Fee Structure // CM Shri School Karampura
+  // Admissions / Process / Dates
+  } else if (
+    q.includes('admission') ||
+    q.includes('dakhila') ||
+    q.includes('apply') ||
+    q.includes('entrance') ||
+    q.includes('edudel') ||
+    q.includes('test') ||
+    q.includes('class 6') ||
+    q.includes('class 9') ||
+    q.includes('class 11')
+  ) {
+    fullResponse = `CM Shri School Karampura (School ID: **1516068**) ke admissions Directorate of Education ke centralized online system ke through hote hain.
 
-**Education at CM Shri School Karampura is 100% FREE** under the Government of NCT of Delhi's flagship **CM Shri Centre of Excellence** scheme.
+**Admission Classes:**
+- **Class 6:** Approx 35 vacant seats (General category)
+- **Class 9:** Centralized Common Aptitude Test ke score par
+- **Class 11:** Aptitude Test aur stream allocation (Science, Commerce, Humanities) ke basis par
 
-| Component | Fee Amount | Notes |
-| :--- | :--- | :--- |
-| **Admission Fee** | **₹0 (NIL)** | No registration or admission fee charged |
-| **Monthly Tuition Fee** | **₹0 (NIL)** | Free schooling for all classes (Grades 1 to 12) |
-| **Science & ICT Lab Charges** | **₹0 (NIL)** | Free access to physics, chemistry, biology & computer labs |
-| **Library & Sports** | **₹0 (NIL)** | Free book borrowing and sports coaching |
-| **Textbooks & Uniforms** | **Provided / Subsidized** | Provided under Delhi Government educational welfare |
-| **Mid-Day Meals** | **₹0 (NIL)** | Nutritious fresh meals provided daily |
+**Apply Kaise Karein?**
+1. [edudel.nic.in](https://www.edudel.nic.in) par jayein aur **CM Shri Admission 2026-27** link par click karein.
+2. Form mein student details aur School ID **1516068** select karein.
+3. Entrance test (Hindi, English, Maths, Science, Mental Ability) appear karein.
+4. Merit list aane par school campus mein document verification ke baad free admission confirm ho jata hai.
 
-> **Important:** Parents and guardians should beware of any touts or unauthorized agents. Admissions and schooling are strictly merit-based and completely free.`;
+Session April se start hota hai. Kya aapko required documents ki list chahiye?`;
 
-  } else if (q.includes('stream') || q.includes('subject') || q.includes('science') || q.includes('commerce') || q.includes('arts') || q.includes('humanities') || q.includes('11th') || q.includes('12th')) {
-    fullResponse = `### Senior Secondary Streams & Subject Combinations (Classes 11 & 12)
+  // Streams & Subjects for 11th & 12th
+  } else if (
+    q.includes('stream') ||
+    q.includes('subject') ||
+    q.includes('science') ||
+    q.includes('commerce') ||
+    q.includes('arts') ||
+    q.includes('humanities') ||
+    q.includes('11th') ||
+    q.includes('12th')
+  ) {
+    fullResponse = `Class 11 aur 12 mein teenon major CBSE streams available hain:
 
-CM Shri School Karampura offers all three major academic streams under the **Central Board of Secondary Education (CBSE)** curriculum:
+1. **Science Stream:**
+   - Physics, Chemistry, Biology (Medical) / Mathematics (Non-Medical)
+   - Computer Science / Physical Education, English Core
 
-#### 1. Science Stream (Medical & Non-Medical)
-- **Physics**
-- **Chemistry**
-- **Biology** (Medical) / **Mathematics** (Non-Medical)
-- **Computer Science / Physical Education**
-- **English Core**
+2. **Commerce Stream:**
+   - Accountancy, Business Studies, Economics
+   - Mathematics / Informatics Practices (IP), English Core
 
-#### 2. Commerce Stream
-- **Accountancy**
-- **Business Studies**
-- **Economics**
-- **Mathematics / Informatics Practices (IP)**
-- **English Core**
+3. **Humanities / Arts Stream:**
+   - History, Political Science, Economics, Geography
+   - Hindi Elective / English Core
 
-#### 3. Humanities / Arts Stream
-- **History**
-- **Political Science**
-- **Economics**
-- **Geography**
-- **Hindi Elective / English Core**
+Stream allotment Class 10 ke marks aur DoE Aptitude Test ke basis par kiya jata hai. Aap kaunsi stream lene ki soch rahe hain?`;
 
-> **Stream Allocation Criteria:** Stream allotment for Class 11 is determined based on Class 10 board performance and the Directorate of Education Common Aptitude Test scores.`;
+  // Contact / Phone / Email / Principal
+  } else if (
+    q.includes('contact') ||
+    q.includes('phone') ||
+    q.includes('number') ||
+    q.includes('email') ||
+    q.includes('principal') ||
+    q.includes('head')
+  ) {
+    fullResponse = `Aap school administration se in details par direct contact kar sakte hain:
 
-  } else if (q.includes('contact') || q.includes('phone') || q.includes('address') || q.includes('email') || q.includes('location') || q.includes('map') || q.includes('principal') || q.includes('kahan hai')) {
-    fullResponse = `### Official Contact & Location Directory
-
-**Government Co-Ed Senior Secondary School, CM Shri School Karampura**
-
-* **Campus Address:** Industrial Area, Karampura, New Delhi, West Delhi, Delhi – 110015
-* **Administrative Zone:** Zone 16, District West-A, Directorate of Education
-* **School ID (DoE):** \`1516068\`
-* **CBSE Affiliation Code:** \`2766038\` (Valid up to 2028)
-* **Head of Institution / Principal:** Sh. Harish Kumar / Sh. Hari Krishan
-
-#### 📞 Telecommunication & Email
-- **School Office Phone:** \`011-25455229\` / \`011-25100677\`
-- **Emergency / Alternate Helpline:** \`+91 9818016205\`
+- **Principal / Head of Institution:** Sh. Harish Kumar / Sh. Hari Krishan
+- **Office Phone:** \`011-25455229\` / \`011-25100677\`
+- **Emergency Helpline:** \`+91 9818016205\`
 - **Official Email:** [school1516068@yahoo.com](mailto:school1516068@yahoo.com)
-- **Zone Office Email:** [1516104zone16@gmail.com](mailto:1516104zone16@gmail.com)
+- **Campus Address:** Industrial Area, Karampura, New Delhi – 110015 (Zone 16, West-A)
+- **DoE School ID:** 1516068 | **CBSE Code:** 2766038
 
-#### 🗺️ Navigation & Coordinates
-- **Google Maps:** [Open in Google Maps](https://www.google.com/maps/place/Government+Co+Ed+Sr+Secondary+School+Industrial+Area+Karam+Pura/@28.6632984,77.1416647,17z)
-- **Coordinates:** Latitude \`28.6632984\`, Longitude \`77.1416647\`
-- **Nearest Transit:** Well connected via Karampura Industrial Area main arterial roads and Delhi Metro network.`;
+Kya aapko kisi specific department ya teacher se baat karni hai?`;
 
-  } else if (q.includes('facility') || q.includes('facilities') || q.includes('lab') || q.includes('smart') || q.includes('playground') || q.includes('library') || q.includes('campus')) {
-    fullResponse = `### Campus Infrastructure & Modern Facilities
+  // Campus / Facilities / Labs / Playground
+  } else if (
+    q.includes('facility') ||
+    q.includes('facilities') ||
+    q.includes('lab') ||
+    q.includes('smart') ||
+    q.includes('playground') ||
+    q.includes('library') ||
+    q.includes('sports') ||
+    q.includes('ground')
+  ) {
+    fullResponse = `CM Shri School Karampura ek modern **Centre of Excellence** hai jismein top-tier facilities hain:
 
-As a recognized **CM Shri Centre of Excellence**, the school has been upgraded with state-of-the-art academic and sports infrastructure:
+- **Campus & Sports:** 9,931 sq. meter campus with a 2,512 sq. meter open sports ground (cricket, football, athletics, yoga).
+- **AI Smart Classrooms:** 32 classrooms equipped with interactive smart boards aur digital learning screens.
+- **Laboratories:** 3 well-equipped Science Labs (Physics, Chemistry, Biology) + Computer ICT Lab (10 workstations).
+- **Library:** 7,969+ academic aur competitive exam books ka collection.
+- **Student Welfare:** Fresh Mid-Day Meals, 9 functional boys' & 9 girls' toilets, pure tap drinking water.
+- **Activities:** NCC, Scouts & Guides, Sports Day, Annual Day aur Science Exhibitions.`;
 
-#### ✦ Campus Scale
-- **Total Campus Area:** 9,931 square meters with a secure pucca boundary wall.
-- **Sports Playground:** 2,512 square meters dedicated open field for football, cricket, athletics, and yoga.
+  // Greetings / Hi / Hello
+  } else if (
+    q.includes('hi') ||
+    q.includes('hello') ||
+    q.includes('hey') ||
+    q.includes('namaste') ||
+    q.includes('who are you')
+  ) {
+    fullResponse = `Namaste! Main **AnkurGPT** hoon — Government Co-Ed Senior Secondary School, CM Shri School Karampura (School ID: **1516068**) ka official AI Assistant.
 
-#### ✦ Academic Infrastructure
-- **32 Classrooms:** Spacious, well-ventilated, all-weather instructional rooms.
-- **AI Smart Classrooms:** Equipped with audio-visual smart boards, interactive displays, and digital learning content.
-- **3 Specialized Science Labs:** Dedicated Physics, Chemistry, and Biology laboratories equipped for CBSE practical exams.
-- **Computer ICT Lab:** 10 functional high-speed learning workstations with broadband connectivity.
-- **School Library:** Stocked with over **7,969 books**, reference journals, and competitive exam preparation materials.
+Main aapki admissions (Class 6, 9, 11), Class 11 ke streams, free fee structure, campus facilities, ya school contact details mein madad kar sakta hoon.
 
-#### ✦ Student Welfare & Sanitation
-- **Mid-Day Meals:** Fresh, hygienic, and nutritious meals prepared under Directorate of Education standards.
-- **Functional Restrooms:** 9 dedicated boys' toilets and 9 dedicated girls' toilets.
-- **Pure Tap Drinking Water:** Tested clean drinking water facilities.
-- **Co-Curriculars:** NCC, Scouts & Guides, Sports Day, Annual Cultural Meet, and Science Exhibitions.`;
+Aap mujhse school ke baare mein kuch bhi pooch sakte hain. Kaise madad karun aapki?`;
 
-  } else if (q.includes('cbse') || q.includes('affiliation') || q.includes('board') || q.includes('udise')) {
-    fullResponse = `### CBSE & Regulatory Affiliation Credentials
-
-- **Affiliation Board:** Central Board of Secondary Education (CBSE), New Delhi
-- **CBSE Affiliation Code:** \`2766038\` (Affiliated up to 2028)
-- **Directorate of Education School ID:** \`1516068\`
-- **UDISE Code:** \`07070110001\`
-- **School Category:** Co-Educational Senior Secondary (Grades 1 to 12)
-- **Medium of Instruction:** Bilingual (English and Hindi)
-- **Governing Body:** Directorate of Education, Government of NCT of Delhi`;
-
+  // Fallback direct answer
   } else {
-    fullResponse = `### CM Shri School Karampura // AI Helpdesk
+    fullResponse = `Aapne poocha: *"${query}"*
 
-Thank you for your question regarding **Government Co-Ed Senior Secondary School, CM Shri School Karampura (School ID: 1516068)**.
+Main **CM Shri School Karampura (ID: 1516068)** ka official AI Assistant hoon.
 
-Here is a summary of key institutional details:
-- **School Status:** One of 75 Delhi Government CM Shri Centres of Excellence
-- **Curriculum:** CBSE Affiliated (Code: 2766038, valid up to 2028)
-- **Classes:** Co-educational schooling from Class 1 to Class 12
-- **Senior Secondary Streams:** Science, Commerce, and Humanities
-- **Tuition:** 100% Free Education with zero admission or tuition fees
-- **Admissions:** Centralized via [edudel.nic.in](https://www.edudel.nic.in) for Classes 6, 9, and 11
-- **Contact:** 011-25455229 | [school1516068@yahoo.com](mailto:school1516068@yahoo.com)
+Aap mujhse school ke baare mein direct pooch sakte hain:
+- **Location & Contact:** School kaha hai, phone number, principal details
+- **Admissions 2026-27:** Class 6, 9 aur 11 ke online application aur test
+- **Streams & Subjects:** Class 11 Science, Commerce, aur Humanities
+- **Facilities:** AI Smart Classrooms, science labs, library aur sports ground
+- **100% Free Education:** Zero fees policy
 
-You can ask me about:
-1. **Admissions:** Eligibility, entrance test format, registration dates
-2. **Streams:** Subject options in Class 11 Science, Commerce, and Arts
-3. **Facilities:** AI Smart Classrooms, science labs, library, sports ground
-4. **Documents:** Verification checklist for new students
-
-*Type \`/\` in the message box for quick school command templates.* How can I help you further?`;
+Aap apna sawal thoda detail mein likhein, main turant direct answer dunga!`;
   }
 
-  // Stream text smoothly with typewriter effect matching user's streamSpeed
-  const delay = settings.streamSpeed === 'fast' ? 6 : settings.streamSpeed === 'instant' ? 0 : 12;
+  // Stream smoothly
+  const delay = settings.streamSpeed === 'fast' ? 5 : settings.streamSpeed === 'instant' ? 0 : 10;
   const tokens = fullResponse.split(/(?<=\s|[\n.,;:?!])/);
 
   let accumulated = '';
@@ -290,15 +325,15 @@ You can ask me about:
   return accumulated;
 }
 
-// Helper to generate a succinct conversation title from the first prompt
+// Generate Succinct Title
 export function generateChatTitle(prompt: string): string {
   const clean = prompt.replace(/[#*`]/g, '').trim();
-  if (clean.length <= 32) return clean;
+  if (clean.length <= 30) return clean;
   const words = clean.split(/\s+/).slice(0, 5).join(' ');
   return `${words}...`;
 }
 
-// Real OpenAI Streaming API integration
+// OpenAI API integration
 async function streamOpenAIResponse(
   messages: Message[],
   settings: AppSettings,
