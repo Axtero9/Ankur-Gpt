@@ -5,7 +5,9 @@ import {
   RotateCcw,
   Volume2,
   VolumeX,
-  Sparkles
+  Sparkles,
+  ZoomIn,
+  X
 } from 'lucide-react';
 import { Message, Conversation, AppSettings } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -27,6 +29,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [selectedImageModal, setSelectedImageModal] = useState<string | null>(null);
 
   const messages = conversation?.messages || [];
 
@@ -90,10 +93,33 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             >
               {/* User Message Bubble */}
               {isUser ? (
-                <div className="max-w-[80%] rounded-3xl px-5 py-3 bg-[#2f2f2f] text-[#ececec] text-[15px] leading-relaxed">
-                  <p className="whitespace-pre-wrap font-sans">
-                    {message.content}
-                  </p>
+                <div className="max-w-[85%] sm:max-w-[75%] rounded-3xl px-5 py-3 bg-[#2f2f2f] text-[#ececec] text-[15px] leading-relaxed">
+                  {message.image && (
+                    <div className="mb-2.5">
+                      <div
+                        onClick={() => setSelectedImageModal(message.image || null)}
+                        className="relative group/img cursor-pointer inline-block overflow-hidden rounded-2xl border border-[#444] bg-black/40 hover:border-blue-500/60 transition-all max-w-full"
+                        title="Click to view full photo"
+                      >
+                        <img
+                          src={message.image}
+                          alt="Question attachment"
+                          className="max-h-72 w-auto object-contain rounded-2xl transition-transform duration-200 group-hover/img:scale-[1.01]"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
+                          <span className="text-xs font-medium text-white bg-black/75 px-3 py-1.5 rounded-full flex items-center gap-1.5 backdrop-blur-sm border border-white/20">
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            Expand photo
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {message.content && (
+                    <p className="whitespace-pre-wrap font-sans">
+                      {message.content}
+                    </p>
+                  )}
                 </div>
               ) : (
                 /* Assistant Message */
@@ -101,7 +127,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   <div className="flex items-center gap-2 text-xs text-[#b4b4b4] pb-1">
                     <Sparkles className="w-3.5 h-3.5 text-[#b4b4b4]" />
                     <span className="font-medium text-[#ececec]">
-                      AnkurGPT
+                      VidyaGPT
                     </span>
                   </div>
 
@@ -174,6 +200,32 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           );
         })}
       </div>
+
+      {/* Full-Screen Image Lightbox Modal */}
+      {selectedImageModal && (
+        <div
+          onClick={() => setSelectedImageModal(null)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="relative max-w-4xl max-h-[90vh] flex flex-col items-center"
+          >
+            <button
+              onClick={() => setSelectedImageModal(null)}
+              className="absolute -top-12 right-0 p-2 rounded-full bg-[#2f2f2f] text-white hover:bg-[#404040] transition-colors border border-[#444]"
+              title="Close image"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={selectedImageModal}
+              alt="Enlarged question"
+              className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-[#444]"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

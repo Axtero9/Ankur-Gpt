@@ -150,13 +150,16 @@ export const App: React.FC = () => {
   };
 
   // Send Message Flow
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || isStreaming) return;
+  const handleSendMessage = async (content: string, image?: string) => {
+    if ((!content.trim() && !image) || isStreaming) return;
+
+    const userText = content.trim() || (image ? 'Please analyze and solve the question shown in this photo step-by-step:' : '');
 
     const userMsg: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content,
+      content: userText,
+      image,
       timestamp: Date.now(),
       modelUsed: settings.selectedModel
     };
@@ -172,7 +175,9 @@ export const App: React.FC = () => {
     };
 
     const isFirstMessage = (activeConversation?.messages.length || 0) === 0;
-    const newTitle = isFirstMessage ? generateChatTitle(content) : activeConversation.title;
+    const newTitle = isFirstMessage
+      ? (content.trim() ? generateChatTitle(content) : 'Question Photo 📸')
+      : activeConversation.title;
 
     const updatedMessages = [...(activeConversation?.messages || []), userMsg];
 
@@ -365,12 +370,12 @@ export const App: React.FC = () => {
               isStreaming={isStreaming}
             />
 
-            {/* Suggestion Pills (matching screenshot) */}
-            <div className="flex flex-wrap items-center justify-center gap-2 mt-4 max-w-xl">
+            {/* Suggestion Pills */}
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-4 max-w-2xl">
               <button
                 onClick={() => {
                   sound.playClick();
-                  handleSendMessage('What can you do? Explain all your features, information, and how you can assist students and parents.');
+                  handleSendMessage('What can you do? Explain all your academic tutoring capabilities (Math, Science, English, etc.) and CM Shri School Karampura assistance.');
                 }}
                 className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
               >
@@ -380,31 +385,71 @@ export const App: React.FC = () => {
               <button
                 onClick={() => {
                   sound.playClick();
-                  handleSendMessage('Explain the centralized admission process for Class 6, 9, and 11 on edudel.nic.in for 2026-27.');
+                  handleSendMessage('Explain photosynthesis in plants with its chemical equation, light & dark reaction stages, and why it is essential for life.');
                 }}
                 className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
               >
-                Admissions 2026-27
+                🌿 Photosynthesis
               </button>
 
               <button
                 onClick={() => {
                   sound.playClick();
-                  handleSendMessage('What streams and subjects are offered in Class 11 (Science, Commerce, Humanities)?');
+                  handleSendMessage('Solve 2x + 15 = 45 step-by-step with clear algebraic working and verification.');
                 }}
                 className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
               >
-                Class 11 Streams
+                📐 Solve Math Step-by-Step
               </button>
 
               <button
                 onClick={() => {
                   sound.playClick();
-                  handleSendMessage('What is the school fee policy and admission charge for CM Shri School Karampura?');
+                  handleSendMessage('Explain Newton\'s three laws of motion with mathematical formulas and real-world examples.');
                 }}
                 className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
               >
-                100% Free Education
+                ⚡ Newton\'s Laws
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  handleSendMessage('Explain the centralized admission process for Class 6, 9, and 11 on edudel.nic.in for 2026-27 at CM Shri School Karampura.');
+                }}
+                className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
+              >
+                🏫 Admissions 2026-27
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  handleSendMessage('What streams and subjects are offered in Class 11 (Science, Commerce, Humanities) at CM Shri School Karampura?');
+                }}
+                className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
+              >
+                📚 Class 11 Streams
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  handleSendMessage('Draft a formal school leave application to the Principal for 3 days due to illness/fever.');
+                }}
+                className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
+              >
+                📝 Leave Application
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  handleSendMessage('What is the school fee policy and 100% free education scheme under Delhi Govt CM Shri Centre of Excellence?');
+                }}
+                className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
+              >
+                ✨ 100% Free Education
               </button>
             </div>
           </div>
@@ -431,7 +476,7 @@ export const App: React.FC = () => {
 
         {/* Bottom Disclaimer (matching screenshot) */}
         <div className="py-2.5 text-center text-xs text-[#8e8e8e] font-sans px-4">
-          AnkurGPT is powered by Google Gemini. CM Shri School Karampura (ID: 1516068). Free Education under Delhi Govt.
+          VidyaGPT is powered by Google Gemini. CM Shri School Karampura (ID: 1516068). Free Education under Delhi Govt.
         </div>
       </main>
 

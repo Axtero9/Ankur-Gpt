@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#212121] transition-colors text-sm font-semibold text-[#ececec]"
           >
-            <span>AnkurGPT</span>
+            <span>VidyaGPT</span>
             <ChevronDown className="w-3.5 h-3.5 text-[#b4b4b4]" />
           </button>
 

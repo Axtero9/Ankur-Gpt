@@ -10,6 +10,7 @@ export interface Message {
     total?: number;
   };
   isStreaming?: boolean;
+  image?: string;
 }
 
 export interface Conversation {
@@ -23,7 +24,7 @@ export interface Conversation {
   model: string;
 }
 
-export type AIProvider = 'gemini' | 'ankur' | 'openai' | 'claude' | 'local' | 'built-in';
+export type AIProvider = 'gemini' | 'vidya' | 'openai' | 'claude' | 'local' | 'built-in';
 
 export interface AIModel {
   id: string;

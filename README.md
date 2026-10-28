@@ -1,7 +1,7 @@
-# AnkurGPT // (1)
+# VidyaGPT // (1)
 ### *Pure Conversational Intelligence Engineered with Tactile Precision*
 
-AnkurGPT is a next-generation AI conversational workspace inspired by the conversational flow of **ChatGPT**, the materiality and optical depth of **Apple**, the utilitarian document clarity of **Notion**, and the raw, transparent monochrome industrial design of **Nothing**.
+VidyaGPT is a next-generation AI conversational workspace inspired by the conversational flow of **ChatGPT**, the materiality and optical depth of **Apple**, the utilitarian document clarity of **Notion**, and the raw, transparent monochrome industrial design of **Nothing**.
 
 ---
 
@@ -9,7 +9,7 @@ AnkurGPT is a next-generation AI conversational workspace inspired by the conver
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                              AnkurGPT                                  │
+│                              VidyaGPT                                  │
 ├─────────────────┬─────────────────┬──────────────────┬─────────────────┤
 │    ChatGPT      │      Apple      │      Notion      │     Nothing     │
 ├─────────────────┼─────────────────┼──────────────────┼─────────────────┤

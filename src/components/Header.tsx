@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-[#2f2f2f] transition-colors text-sm font-semibold text-[#ececec] group"
         >
-          <span>AnkurGPT</span>
+          <span>VidyaGPT</span>
           <ChevronDown className="w-4 h-4 text-[#b4b4b4] group-hover:text-white" />
         </button>
       </div>
