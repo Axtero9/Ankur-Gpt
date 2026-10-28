@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Copy, Check, Terminal } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Copy, Check, Terminal, Sigma } from 'lucide-react';
+import katex from 'katex';
 import { sound } from '../services/sound';
 
 interface MarkdownRendererProps {
@@ -22,6 +23,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
 type Part =
   | { type: 'h1' | 'h2' | 'h3'; text: string }
   | { type: 'code'; language: string; code: string }
+  | { type: 'math'; content: string }
   | { type: 'blockquote'; text: string }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'ul'; items: string[] }
@@ -53,6 +55,44 @@ function parseMarkdown(text: string): Part[] {
       });
       i++;
       continue;
+    }
+
+    // Display Math Block ($$ ... $$ on separate lines)
+    if (line.trim().startsWith('$$')) {
+      const trimmed = line.trim();
+      const secondDollarIdx = trimmed.indexOf('$$', 2);
+      // Single line containing exactly one $$...$$ block
+      if (trimmed.length > 2 && trimmed.endsWith('$$') && secondDollarIdx === trimmed.length - 2) {
+        parts.push({
+          type: 'math',
+          content: trimmed.slice(2, -2).trim()
+        });
+        i++;
+        continue;
+      }
+
+      // Multi-line $$ ... $$
+      if (secondDollarIdx === -1) {
+        const mathLines: string[] = [];
+        const after = trimmed.slice(2).trim();
+        if (after) mathLines.push(after);
+        i++;
+        while (i < lines.length && !lines[i].trim().endsWith('$$')) {
+          mathLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length) {
+          const closingLine = lines[i].trim();
+          const before = closingLine.replace(/\$\$$/, '').trim();
+          if (before) mathLines.push(before);
+          i++;
+        }
+        parts.push({
+          type: 'math',
+          content: mathLines.join('\n')
+        });
+        continue;
+      }
     }
 
     // Horizontal Rule
@@ -106,22 +146,22 @@ function parseMarkdown(text: string): Part[] {
       }
     }
 
-    // Bullet List
-    if (/^\s*[-*]\s+/.test(line)) {
+    // Bullet List (supports -, *, and unicode bullet •)
+    if (/^\s*[-*•]\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*]\s+/, ''));
+      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*•]\s+/, ''));
         i++;
       }
       parts.push({ type: 'ul', items });
       continue;
     }
 
-    // Numbered List
-    if (/^\s*\d+\.\s+/.test(line)) {
+    // Numbered List (supports 1. and 1))
+    if (/^\s*\d+[\.)]\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+      while (i < lines.length && /^\s*\d+[\.)]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+[\.)]\s+/, ''));
         i++;
       }
       parts.push({ type: 'ol', items });
@@ -142,10 +182,11 @@ function parseMarkdown(text: string): Part[] {
       lines[i].trim().length > 0 &&
       !lines[i].trim().startsWith('#') &&
       !lines[i].trim().startsWith('```') &&
+      !lines[i].trim().startsWith('$$') &&
       !lines[i].trim().startsWith('>') &&
       !lines[i].trim().startsWith('|') &&
-      !/^\s*[-*]\s+/.test(lines[i]) &&
-      !/^\s*\d+\.\s+/.test(lines[i])
+      !/^\s*[-*•]\s+/.test(lines[i]) &&
+      !/^\s*\d+[\.)]\s+/.test(lines[i])
     ) {
       paragraphLines.push(lines[i]);
       i++;
@@ -164,33 +205,35 @@ function renderPart(part: Part, index: number) {
   switch (part.type) {
     case 'h1':
       return (
-        <h1 className="text-xl md:text-2xl font-semibold text-white mt-4 mb-2">
+        <h1 key={index} className="text-xl md:text-2xl font-semibold text-white mt-4 mb-2">
           {renderInline(part.text)}
         </h1>
       );
     case 'h2':
       return (
-        <h2 className="text-lg md:text-xl font-semibold text-white mt-3.5 mb-1.5">
+        <h2 key={index} className="text-lg md:text-xl font-semibold text-white mt-3.5 mb-1.5">
           {renderInline(part.text)}
         </h2>
       );
     case 'h3':
       return (
-        <h3 className="text-base font-semibold text-white mt-3 mb-1">
+        <h3 key={index} className="text-base font-semibold text-white mt-3 mb-1">
           {renderInline(part.text)}
         </h3>
       );
     case 'code':
       return <CodeBlock key={index} code={part.code} language={part.language} />;
+    case 'math':
+      return <MathRenderer key={index} math={part.content} displayMode={true} />;
     case 'blockquote':
       return (
-        <blockquote className="border-l-2 border-[#555] pl-4 py-1 italic text-[#b4b4b4] my-3">
+        <blockquote key={index} className="border-l-2 border-[#555] pl-4 py-1 italic text-[#b4b4b4] my-3">
           {renderInline(part.text)}
         </blockquote>
       );
     case 'table':
       return (
-        <div className="overflow-x-auto my-4 rounded-lg border border-[#383838] bg-[#1a1a1a]">
+        <div key={index} className="overflow-x-auto my-4 rounded-lg border border-[#383838] bg-[#1a1a1a]">
           <table className="w-full text-left text-sm">
             <thead className="bg-[#242424] border-b border-[#383838] text-xs text-[#b4b4b4] uppercase">
               <tr>
@@ -217,7 +260,7 @@ function renderPart(part: Part, index: number) {
       );
     case 'ul':
       return (
-        <ul className="space-y-1.5 my-2 pl-5 list-disc text-[#ececec]">
+        <ul key={index} className="space-y-1.5 my-2 pl-5 list-disc text-[#ececec]">
           {part.items.map((item, i) => (
             <li key={i}>{renderInline(item)}</li>
           ))}
@@ -225,24 +268,62 @@ function renderPart(part: Part, index: number) {
       );
     case 'ol':
       return (
-        <ol className="space-y-1.5 my-2 pl-5 list-decimal text-[#ececec]">
+        <ol key={index} className="space-y-1.5 my-2 pl-5 list-decimal text-[#ececec]">
           {part.items.map((item, i) => (
             <li key={i}>{renderInline(item)}</li>
           ))}
         </ol>
       );
     case 'hr':
-      return <hr className="border-[#333333] my-4" />;
+      return <hr key={index} className="border-[#333333] my-4" />;
     case 'paragraph':
-      return <p className="text-[#ececec] leading-relaxed mb-3">{renderInline(part.text)}</p>;
+      return (
+        <div key={index} className="text-[#ececec] leading-relaxed mb-3">
+          {renderInline(part.text)}
+        </div>
+      );
   }
 }
 
-// Inline renderer for **bold**, *italic*, `code`, and [link](url)
+// Regex to capture:
+// 1. Display math: $$...$$ or \[...\]
+// 2. Inline math: \(...\) or $...$ (ensuring no trailing/leading whitespace and not escaped)
+// 3. Inline code: `...`
+// 4. Bold: **...**
+// 5. Italic: *...*
+// 6. Markdown links: [...](...)
+const INLINE_TOKEN_REGEX = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\(.+?\\\)|\$(?!\s)[^\$\n]+?(?<!\s)\$|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+
+// Inline renderer for **bold**, *italic*, `code`, [link](url), and LaTeX math
 function renderInline(text: string): React.ReactNode {
-  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
+  const tokens = text.split(INLINE_TOKEN_REGEX);
 
   return tokens.map((token, i) => {
+    // Display Math: $$ ... $$
+    if (token.startsWith('$$') && token.endsWith('$$') && token.length >= 4) {
+      const math = token.slice(2, -2).trim();
+      return <MathRenderer key={i} math={math} displayMode={true} />;
+    }
+
+    // Display Math: \[ ... \]
+    if (token.startsWith('\\[') && token.endsWith('\\]') && token.length >= 4) {
+      const math = token.slice(2, -2).trim();
+      return <MathRenderer key={i} math={math} displayMode={true} />;
+    }
+
+    // Inline Math: \( ... \)
+    if (token.startsWith('\\(') && token.endsWith('\\)') && token.length >= 4) {
+      const math = token.slice(2, -2).trim();
+      return <MathRenderer key={i} math={math} displayMode={false} />;
+    }
+
+    // Inline Math: $ ... $
+    if (token.startsWith('$') && token.endsWith('$') && token.length >= 2) {
+      const math = token.slice(1, -1).trim();
+      return <MathRenderer key={i} math={math} displayMode={false} />;
+    }
+
+    // Inline Code
     if (token.startsWith('`') && token.endsWith('`')) {
       return (
         <code
@@ -253,6 +334,8 @@ function renderInline(text: string): React.ReactNode {
         </code>
       );
     }
+
+    // Bold
     if (token.startsWith('**') && token.endsWith('**')) {
       return (
         <strong key={i} className="font-semibold text-white">
@@ -260,6 +343,8 @@ function renderInline(text: string): React.ReactNode {
         </strong>
       );
     }
+
+    // Italic
     if (token.startsWith('*') && token.endsWith('*')) {
       return (
         <em key={i} className="italic text-[#ececec]">
@@ -267,6 +352,8 @@ function renderInline(text: string): React.ReactNode {
         </em>
       );
     }
+
+    // Markdown Link
     const linkMatch = token.match(/\[([^\]]+)\]\(([^)]+)\)/);
     if (linkMatch) {
       return (
@@ -281,9 +368,78 @@ function renderInline(text: string): React.ReactNode {
         </a>
       );
     }
+
     return token;
   });
 }
+
+// MathRenderer with KaTeX and Copy Option
+const MathRenderer: React.FC<{ math: string; displayMode?: boolean }> = ({ math, displayMode = false }) => {
+  const [copied, setCopied] = useState(false);
+
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(math.trim(), {
+        displayMode,
+        throwOnError: false,
+        output: 'htmlAndMathml'
+      });
+    } catch (err) {
+      console.warn('KaTeX render error:', err);
+      return '';
+    }
+  }, [math, displayMode]);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(math);
+    sound.playClick();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!html) {
+    return <code className="font-mono text-amber-300 text-sm">{math}</code>;
+  }
+
+  if (displayMode) {
+    return (
+      <div className="relative group my-3 py-3 px-4 rounded-xl bg-[#141414] border border-[#2e2e2e] shadow-sm max-w-full overflow-hidden text-center">
+        {/* Copy Formula Button on Hover */}
+        <div className="flex justify-end mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleCopy}
+            title="Copy LaTeX formula"
+            className="flex items-center gap-1 text-[11px] text-[#8e8e8e] hover:text-[#ececec] px-2 py-0.5 rounded bg-[#212121] border border-[#333] transition-colors"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3 h-3 text-emerald-400" />
+                <span className="text-emerald-400">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3" />
+                <span>Copy LaTeX</span>
+              </>
+            )}
+          </button>
+        </div>
+        <div
+          className="overflow-x-auto overflow-y-hidden py-1 text-[#ececec] selection:bg-blue-600/30 text-[15px]"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <span
+      className="inline-block px-1 align-baseline text-[#ececec] overflow-x-auto max-w-full selection:bg-blue-600/30"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
 
 // Code Block with Copy Feedback
 const CodeBlock: React.FC<{ code: string; language: string }> = ({ code, language }) => {

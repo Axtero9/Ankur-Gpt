@@ -101,3 +101,28 @@
   color: #b4b4b4;
   margin: 1rem 0;
 }
+
+/* KaTeX Math Styling for Dark Mode */
+.katex {
+  color: #ececec !important;
+  font-size: 1.1em;
+}
+
+.katex-display {
+  margin: 0.25rem 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.katex-display > .katex {
+  text-align: center;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.katex-html {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
