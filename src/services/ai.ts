@@ -1,5 +1,6 @@
 import { Message, AppSettings } from '../types';
 import { SCHOOL_CONTEXT_DOC, DEFAULT_GEMINI_KEY } from './storage';
+import { queryTimetableOrFaculty } from '../data/timetables';
 
 interface GenerateOptions {
   messages: Message[];
@@ -325,7 +326,15 @@ Maine aapki upload ki gayi question photo dekh li hai!
 > 💡 **Tip:** Agar aap live online mode (Gemini Vision) mein hain, toh VidyaGPT photo ke handwritten ya textbook text ko automatically OCR karke direct solution generate karta hai. Aap photo ke saath specific question text (jaise *"solve Q3"* ya *"find value of x"*) bhi likh sakte hain!`;
   }
 
-  // 2. School Ground Truth Queries
+  // 2. Official Class-Wise Timetable & Faculty Queries
+  if (!fullResponse) {
+    const timetableRes = queryTimetableOrFaculty(query);
+    if (timetableRes) {
+      fullResponse = timetableRes;
+    }
+  }
+
+  // 3. School Ground Truth Queries
   if (!fullResponse) {
     // School Location / Where is the school?
     if (

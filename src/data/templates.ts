@@ -58,6 +58,15 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
   },
   // School & Administrative Templates
   {
+    id: 'class-timetable',
+    title: 'Class Timetable & Teachers',
+    command: '/timetable',
+    category: 'facilities',
+    description: 'Class periods, daily routine, Class Teacher & recess',
+    prompt: 'Show the complete daily period schedule, subjects, and Class Teacher for Class: ',
+    icon: 'Calendar'
+  },
+  {
     id: 'admission-process',
     title: 'Admissions 2026-27',
     command: '/admission',

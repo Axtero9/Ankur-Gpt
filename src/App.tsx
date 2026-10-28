@@ -451,6 +451,16 @@ export const App: React.FC = () => {
               >
                 ✨ 100% Free Education
               </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  handleSendMessage('Show the complete bell timings, period schedule, and Class Teacher directory for CM Shri School Karampura (Session 2026-27).');
+                }}
+                className="px-4 py-2 rounded-full bg-[#212121] hover:bg-[#2f2f2f] text-[#b4b4b4] hover:text-[#ececec] text-sm border border-[#383838] transition-all"
+              >
+                📅 Class Timetable & Bell Schedule
+              </button>
             </div>
           </div>
         ) : (
